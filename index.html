@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Attendance System Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <nav>
+    <h2>RFID Attendance</h2>
+    <ul>
+      <li onclick="showSection('dashboard')">Dashboard</li>
+      <li onclick="showSection('graphs')">Graphs</li>
+      <li onclick="showSection('students')">Students</li>
+      <li onclick="showSection('approvals')">Approvals</li>
+      <li onclick="showSection('settings')">Settings</li>
+    </ul>
+  </nav>
+
+  <main>
+    <h1>Attendance System Dashboard</h1>
+
+    <div id="dashboard" class="section">
+      <div class="stat-cards">
+        <div class="stat-card">
+          <h3>Total Students</h3>
+          <p id="totalStudents">0</p>
+        </div>
+        <div class="stat-card">
+          <h3>Today's Attendance</h3>
+          <p id="todayAttendance">0</p>
+        </div>
+        <div class="stat-card">
+          <h3>Week's Attendance</h3>
+          <p id="weekAttendance">0</p>
+        </div>
+      </div>
+      <div class="filter-container">
+        <select id="dateFilter" onchange="updateTable()">
+          <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+        </select>
+        <input type="text" id="nameFilter" placeholder="Search by name..." oninput="updateTable()" />
+      </div>
+      <div id="loading" class="loading">Loading attendance data...</div>
+      <div id="error" class="error" style="display: none;"></div>
+      <table id="attendanceTable" style="display: none;">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>UID</th>
+            <th>Date & Time (IST)</th>
+          </tr>
+        </thead>
+        <tbody id="attendanceBody"></tbody>
+      </table>
+    </div>
+
+    <div id="graphs" class="section" style="display: none;">
+      <h2>📊 Attendance Trends</h2>
+      <div class="filter-container">
+        <select id="graphFilter" onchange="updateCharts()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <div class="chart-container">
+        <canvas id="attendanceChart"></canvas>
+      </div>
+    </div>
+
+    <div id="students" class="section" style="display: none;">
+      <h2>🧑 Individual Student Attendance</h2>
+      <div class="filter-container">
+        <select id="studentSelect" onchange="showStudentDetails()">
+          <option value="">Select a student</option>
+        </select>
+      </div>
+      <div id="studentDetails" class="student-details" style="display: none;">
+        <h3 id="studentName"></h3>
+        <p><strong>Total Attendance:</strong> <span id="studentTotal">0</span></p>
+        <p><strong>Last Attendance</strong> <span id="studentLastSeen">-</span></p>
+        <div class="chart-container">
+          <canvas id="studentChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ NEW SECTION: Pending Approvals -->
+    <div id="approvals" class="section" style="display: none;">
+      <h2>🚦 Pending Approvals</h2>
+      <div id="approvalList">
+        <p>Loading approvals...</p>
+      </div>
+    </div>
+
+    <div id="settings" class="section" style="display: none;">
+      <h2>⚙️ Settings</h2>
+      <p>Settings section to be implemented.</p>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script type="module" src="script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,56 @@
+Updated Breadboard Wiring Guide with Continuous Pins
+Using the continuous sequence, here’s the revised step-by-step connection guide:
+
+Power Connections
+Connect ESP32 3.3V pin to breadboard row A1.
+Connect ESP32 GND pin to breadboard row A2.
+
+
+RC522 RFID Module
+Connect RC522 SDA pin to ESP32 GPIO 5 (breadboard row C5).
+Connect RC522 SCK pin to ESP32 GPIO 14 (breadboard row C14).
+Connect RC522 MOSI pin to ESP32 GPIO 18 (breadboard row C18).
+Connect RC522 MISO pin to ESP32 GPIO 15 (breadboard row C15).
+Connect RC522 IRQ pin to ESP32 GPIO 4 (breadboard row C4).
+Connect RC522 GND pin to breadboard row B2 (GND).
+Connect RC522 3.3V pin to breadboard row B1 (3.3V).
+
+
+LED Connections
+Red LED with 220Ω Resistor
+Anode → GPIO 16
+Cathode → GND (via 220Ω resistor)
+Green LED with 220Ω Resistor
+Anode → GPIO 17
+Cathode → GND (via 220Ω resistor)
+
+
+Buzzer
+Connect Buzzer positive pin to ESP32 GPIO 25 (breadboard row C25).
+Connect Buzzer negative pin to breadboard row B2 (GND).
+
+
+16x2 I2C LCD Display (PCF8574T)
+Connect LCD SDA pin to ESP32 GPIO 21 (breadboard row C21).
+Connect LCD SCL pin to ESP32 GPIO 22 (breadboard row C22).
+Connect LCD VCC pin to breadboard row B1 (3.3V).
+Connect LCD GND pin to breadboard row B2 (GND).
+
+
+Diagram Summary with Continuous Pins
+ESP32 3.3V → A1, B1
+ESP32 GND → A2, B2
+RC522 SDA → C5 (GPIO 5)
+RC522 SCK → C14 (GPIO 14)
+RC522 MOSI → C18 (GPIO 18)
+RC522 MISO → C15 (GPIO 15)
+RC522 IRQ → C4 (GPIO 4)
+RC522 GND → B2
+RC522 3.3V → B1
+Red LED Anode → D10, Cathode → E10, Resistor → F10, GND → B2, Control → C16 (GPIO 16)
+Green LED Anode → D15, Cathode → E15, Resistor → F15, GND → B2, Control → C17 (GPIO 17)
+Buzzer Positive → C25 (GPIO 25), Negative → B2
+LCD SDA → C21 (GPIO 21)
+LCD SCL → C22 (GPIO 22)
+LCD VCC → B1
+LCD GND → B2
