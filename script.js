@@ -5,7 +5,10 @@ import {
     onChildAdded,
     get,
     set,
-    remove
+    remove,
+    query,
+    orderByChild,
+    startAfter
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 
 const firebaseConfig = {
@@ -33,6 +36,10 @@ const studentLastSeenEl = document.getElementById('studentLastSeen');
 
 let attendanceData = [];
 let students = new Set();
+let processedRecords = new Set(); // Track processed records to avoid duplicate emails
+
+// Store the page load timestamp to use as a threshold for new records
+const pageLoadTime = Date.now();
 
 // Chart objects
 let attendanceChart = null;
@@ -86,16 +93,28 @@ function formatDate(timestamp) {
 }
 
 // Improved function to send email notification with correct timestamp
-function sendEmailNotification(name, email, timestamp) {
+function sendEmailNotification(name, email, timestamp, recordId) {
+    // Skip if this record was already processed
+    if (processedRecords.has(recordId)) {
+        console.log(`Email for record ${recordId} already sent, skipping`);
+        return;
+    }
+    
     if (!email) {
         console.error("No email provided for notification");
         return;
     }
 
     // Convert timestamp to milliseconds if it's in seconds
-    // ESP32 might be sending Unix time in seconds rather than milliseconds
     if (timestamp < 10000000000) { // If timestamp appears to be in seconds
         timestamp = timestamp * 1000;
+    }
+    
+    // Only send email if this record is recent (within the last 5 minutes)
+    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+    if (timestamp < fiveMinutesAgo) {
+        console.log(`Record ${recordId} is older than 5 minutes, not sending email`);
+        return;
     }
     
     const formattedDate = formatDate(timestamp);
@@ -110,9 +129,32 @@ function sendEmailNotification(name, email, timestamp) {
     emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
         .then(function(response) {
             console.log('Email sent:', response.status, response.text);
+            // Mark this record as processed
+            processedRecords.add(recordId);
+            // Save to localStorage to persist across page reloads
+            saveProcessedRecords();
         }, function(error) {
             console.error('Email failed:', error);
         });
+}
+
+// Save processed records to localStorage
+function saveProcessedRecords() {
+    localStorage.setItem('processed_records', JSON.stringify([...processedRecords]));
+}
+
+// Load processed records from localStorage
+function loadProcessedRecords() {
+    const stored = localStorage.getItem('processed_records');
+    if (stored) {
+        try {
+            const records = JSON.parse(stored);
+            processedRecords = new Set(records);
+        } catch (e) {
+            console.error("Error loading processed records:", e);
+            processedRecords = new Set();
+        }
+    }
 }
 
 function updateStats() {
@@ -581,8 +623,13 @@ function loadSettings() {
                         Enable Email Notifications
                     </label>
                 </div>
+                <div class="form-group">
+                    <label for="emailTimeWindow">Only send emails for records within (minutes):</label>
+                    <input type="number" id="emailTimeWindow" min="1" max="60" value="5">
+                </div>
                 <button onclick="saveEmailSettings()">Save Settings</button>
                 <button onclick="testEmailNotification()">Send Test Email</button>
+                <button onclick="clearProcessedRecords()">Clear Email History</button>
             </div>
         `;
         
@@ -596,18 +643,21 @@ window.saveEmailSettings = function() {
     const templateId = document.getElementById('emailTemplateId').value;
     const publicKey = document.getElementById('emailPublicKey').value;
     const enableNotifications = document.getElementById('enableEmailNotifications').checked;
+    const timeWindow = document.getElementById('emailTimeWindow').value;
     
     // Save to localStorage
     localStorage.setItem('emailjs_service_id', serviceId);
     localStorage.setItem('emailjs_template_id', templateId);
     localStorage.setItem('emailjs_public_key', publicKey);
     localStorage.setItem('enable_email_notifications', enableNotifications);
+    localStorage.setItem('email_time_window', timeWindow);
     
     // Update global variables
     window.EMAILJS_SERVICE_ID = serviceId;
     window.EMAILJS_TEMPLATE_ID = templateId;
     window.EMAILJS_PUBLIC_KEY = publicKey;
     window.EMAIL_NOTIFICATIONS_ENABLED = enableNotifications;
+    window.EMAIL_TIME_WINDOW = timeWindow;
     
     // Reinitialize EmailJS with the new public key
     emailjs.init(publicKey);
@@ -638,64 +688,22 @@ window.testEmailNotification = function() {
     });
 };
 
-// Firebase attendance listener with improved timestamp handling
-onChildAdded(attendanceRef, (snapshot) => {
-    const record = snapshot.val();
-    
-    // Fix timestamp format if needed
-    if (record.timestamp) {
-        record.timestamp = fixTimestampFormat(record.timestamp);
+// Clear processed records
+window.clearProcessedRecords = function() {
+    if (confirm("This will reset the email notification history. All records will be treated as new when they are detected again. Continue?")) {
+        processedRecords.clear();
+        localStorage.removeItem('processed_records');
+        alert("Email history cleared successfully.");
     }
-    
-    attendanceData.push(record);
-    if (record.name) students.add(record.name);
-    updateStats();
-    updateTable();
-    
-    // Find user email for notification if not already in record
-    if (!record.email && record.uid) {
-        get(ref(database, `attendance_users/${record.uid}`)).then(userSnapshot => {
-            if (userSnapshot.exists()) {
-                const userData = userSnapshot.val();
-                if (userData.email) {
-                    // Send email notification if enabled
-                    const emailNotificationsEnabled = localStorage.getItem('enable_email_notifications') !== 'false';
-                    if (emailNotificationsEnabled) {
-                        sendEmailNotification(record.name || userData.name, userData.email, record.timestamp);
-                    }
-                }
-            }
-        });
-    } else {
-        // Send email notification if enabled and email is available
-        const emailNotificationsEnabled = localStorage.getItem('enable_email_notifications') !== 'false';
-        if (emailNotificationsEnabled && record.email) {
-            sendEmailNotification(record.name, record.email, record.timestamp);
-        }
-    }
-    
-    // Update charts if they're currently displayed
-    if (document.getElementById('graphs').style.display === 'block') {
-        updateCharts();
-    }
-    
-    // Update student details if they're currently displayed
-    if (document.getElementById('students').style.display === 'block' && 
-        studentSelect.value === record.name) {
-        showStudentDetails();
-    }
-});
+};
 
-// Initialize the application
-function init() {
-    loadingDiv.style.display = 'block';
-    errorDiv.style.display = 'none';
-    
-    // Load email settings from localStorage
+// Load email settings from localStorage when the application starts
+function loadEmailSettings() {
     const storedServiceId = localStorage.getItem('emailjs_service_id');
     const storedTemplateId = localStorage.getItem('emailjs_template_id');
     const storedPublicKey = localStorage.getItem('emailjs_public_key');
     const enableNotifications = localStorage.getItem('enable_email_notifications') !== 'false';
+    const timeWindow = localStorage.getItem('email_time_window') || '5';
     
     // Update global variables if stored values exist
     if (storedServiceId) window.EMAILJS_SERVICE_ID = storedServiceId;
@@ -705,12 +713,114 @@ function init() {
         emailjs.init(storedPublicKey);
     }
     window.EMAIL_NOTIFICATIONS_ENABLED = enableNotifications;
+    window.EMAIL_TIME_WINDOW = timeWindow;
+}
+
+// Set up a listener for only new attendance records
+function setupAttendanceListener() {
+    // First load all existing records without sending emails
+    get(attendanceRef).then((snapshot) => {
+        if (snapshot.exists()) {
+            const records = snapshot.val();
+            Object.entries(records).forEach(([key, record]) => {
+                // Fix timestamp format if needed
+                if (record.timestamp) {
+                    record.timestamp = fixTimestampFormat(record.timestamp);
+                }
+                
+                // Add record to processed set to avoid sending emails
+                processedRecords.add(key);
+                
+                // Add to attendance data
+                attendanceData.push(record);
+                if (record.name) students.add(record.name);
+            });
+            
+            // Update UI
+            updateStats();
+            updateTable();
+            saveProcessedRecords();
+        }
+        
+        loadingDiv.style.display = 'none';
+        
+        // Now set up a listener for new records
+        onChildAdded(attendanceRef, (snapshot) => {
+            const key = snapshot.key;
+            const record = snapshot.val();
+            
+            // Fix timestamp format if needed
+            if (record.timestamp) {
+                record.timestamp = fixTimestampFormat(record.timestamp);
+            }
+            
+            // Add to attendance data
+            attendanceData.push(record);
+            if (record.name) students.add(record.name);
+            
+            // Update UI
+            updateStats();
+            updateTable();
+            
+            // Check if this is a new record (added after page loaded)
+            const isNewRecord = record.timestamp > pageLoadTime - (60 * 1000);
+            const emailNotificationsEnabled = localStorage.getItem('enable_email_notifications') !== 'false';
+            
+            if (isNewRecord && emailNotificationsEnabled && !processedRecords.has(key)) {
+                // Find user email for notification if not already in record
+                if (!record.email && record.uid) {
+                    get(ref(database, `attendance_users/${record.uid}`)).then(userSnapshot => {
+                        if (userSnapshot.exists()) {
+                            const userData = userSnapshot.val();
+                            if (userData.email) {
+                                sendEmailNotification(record.name || userData.name, userData.email, record.timestamp, key);
+                            }
+                        }
+                    });
+                } else if (record.email) {
+                    // Send email notification if email is available
+                    sendEmailNotification(record.name, record.email, record.timestamp, key);
+                }
+            }
+            
+            // Update charts if they're currently displayed
+            if (document.getElementById('graphs').style.display === 'block') {
+                updateCharts();
+            }
+            
+            // Update student details if they're currently displayed
+            if (document.getElementById('students').style.display === 'block' && 
+                studentSelect.value === record.name) {
+                showStudentDetails();
+            }
+        });
+    }).catch(error => {
+        console.error("Error loading attendance data:", error);
+        loadingDiv.style.display = 'none';
+        errorDiv.textContent = `Error loading data: ${error.message}`;
+        errorDiv.style.display = 'block';
+    });
+}
+
+// Initialize the application
+function init() {
+    loadingDiv.style.display = 'block';
+    errorDiv.style.display = 'none';
+    
+    // Load processed records from localStorage
+    loadProcessedRecords();
+    
+    // Load email settings from localStorage
+    loadEmailSettings();
     
     // Make these functions accessible globally
     window.showSection = showSection;
     window.updateTable = updateTable;
     window.updateCharts = updateCharts;
     window.showStudentDetails = showStudentDetails;
+    
+    // Set up attendance listener
+    setupAttendanceListener();
     
     // Start with the dashboard view
     showSection('dashboard');
