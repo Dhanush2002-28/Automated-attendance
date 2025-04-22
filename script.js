@@ -46,9 +46,9 @@ let attendanceChart = null;
 let studentChart = null;
 
 // EmailJS configuration - Add your own public key and template IDs
-const EMAILJS_PUBLIC_KEY = "KbNEIIFtPNYswSUG8"; // Replace with your EmailJS public key
-const EMAILJS_SERVICE_ID = "service_oxha449"; // Replace with your EmailJS service ID
-const EMAILJS_TEMPLATE_ID = "template_erpny9c"; // Replace with your EmailJS template ID
+const EMAILJS_PUBLIC_KEY = "-_QwyRCyK9w_n9kcc"; // Replace with your EmailJS public key
+const EMAILJS_SERVICE_ID = "service_2ug1cdb"; // Replace with your EmailJS service ID
+const EMAILJS_TEMPLATE_ID = "template_9j5yd55"; // Replace with your EmailJS template ID
 
 // Initialize EmailJS
 (function() {
@@ -111,9 +111,11 @@ function sendEmailNotification(name, email, timestamp, recordId) {
     }
     
     // Only send email if this record is recent (within the last 5 minutes)
-    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-    if (timestamp < fiveMinutesAgo) {
-        console.log(`Record ${recordId} is older than 5 minutes, not sending email`);
+    const emailTimeWindow = parseInt(localStorage.getItem('email_time_window') || '5');
+    const cutoffTime = Date.now() - (emailTimeWindow * 60 * 1000);
+    
+    if (timestamp < cutoffTime) {
+        console.log(`Record ${recordId} is older than ${emailTimeWindow} minutes, not sending email`);
         return;
     }
     
@@ -716,19 +718,32 @@ function loadEmailSettings() {
     window.EMAIL_TIME_WINDOW = timeWindow;
 }
 
+// Store the last attendance record timestamp to track what's truly new
+let lastKnownRecordTimestamp = 0;
+
 // Set up a listener for only new attendance records
 function setupAttendanceListener() {
     // First load all existing records without sending emails
     get(attendanceRef).then((snapshot) => {
         if (snapshot.exists()) {
             const records = snapshot.val();
+            let latestTimestamp = 0;
+            
             Object.entries(records).forEach(([key, record]) => {
+                // Add key to record for reference
+                record.key = key;
+                
                 // Fix timestamp format if needed
                 if (record.timestamp) {
                     record.timestamp = fixTimestampFormat(record.timestamp);
+                    
+                    // Track the latest timestamp seen
+                    if (record.timestamp > latestTimestamp) {
+                        latestTimestamp = record.timestamp;
+                    }
                 }
                 
-                // Add record to processed set to avoid sending emails
+                // Add record to processed set to avoid sending emails for existing records
                 processedRecords.add(key);
                 
                 // Add to attendance data
@@ -740,18 +755,43 @@ function setupAttendanceListener() {
             updateStats();
             updateTable();
             saveProcessedRecords();
+            
+            // Record the latest timestamp we've seen on load
+            lastKnownRecordTimestamp = latestTimestamp || Date.now();
+            
+            console.log("Initial data loaded. Latest timestamp:", new Date(lastKnownRecordTimestamp));
         }
         
         loadingDiv.style.display = 'none';
         
-        // Now set up a listener for new records
+        // Now set up a listener for new records added after we loaded
+        // This uses a query to only get records newer than the last one we've seen
+        const newRecordsQuery = query(
+            attendanceRef,
+            orderByChild('timestamp'),
+            startAfter(lastKnownRecordTimestamp)
+        );
+        
         onChildAdded(attendanceRef, (snapshot) => {
             const key = snapshot.key;
             const record = snapshot.val();
             
+            // Skip if we've already processed this record
+            if (processedRecords.has(key)) {
+                console.log(`Record ${key} already processed, skipping`);
+                return;
+            }
+            
+            console.log("New record detected:", key, record);
+            
             // Fix timestamp format if needed
             if (record.timestamp) {
                 record.timestamp = fixTimestampFormat(record.timestamp);
+                
+                // Update latest timestamp if this is newer
+                if (record.timestamp > lastKnownRecordTimestamp) {
+                    lastKnownRecordTimestamp = record.timestamp;
+                }
             }
             
             // Add to attendance data
@@ -762,11 +802,15 @@ function setupAttendanceListener() {
             updateStats();
             updateTable();
             
-            // Check if this is a new record (added after page loaded)
-            const isNewRecord = record.timestamp > pageLoadTime - (60 * 1000);
+            // Check if this record is actually new (within our time window)
             const emailNotificationsEnabled = localStorage.getItem('enable_email_notifications') !== 'false';
+            const emailTimeWindow = parseInt(localStorage.getItem('email_time_window') || '5');
+            const cutoffTime = Date.now() - (emailTimeWindow * 60 * 1000);
             
-            if (isNewRecord && emailNotificationsEnabled && !processedRecords.has(key)) {
+            // Only send emails for truly recent records
+            if (emailNotificationsEnabled && record.timestamp > cutoffTime) {
+                console.log(`Record ${key} is recent, sending email notification`);
+                
                 // Find user email for notification if not already in record
                 if (!record.email && record.uid) {
                     get(ref(database, `attendance_users/${record.uid}`)).then(userSnapshot => {
@@ -781,6 +825,11 @@ function setupAttendanceListener() {
                     // Send email notification if email is available
                     sendEmailNotification(record.name, record.email, record.timestamp, key);
                 }
+            } else {
+                console.log(`Record ${key} is too old or notifications disabled, not sending email`);
+                // Still mark as processed to avoid future processing
+                processedRecords.add(key);
+                saveProcessedRecords();
             }
             
             // Update charts if they're currently displayed
@@ -793,7 +842,8 @@ function setupAttendanceListener() {
                 studentSelect.value === record.name) {
                 showStudentDetails();
             }
-        });
+        });// Store last known record timestamp in localStorage to persist between page loads
+        localStorage.setItem('last_known_timestamp', lastKnownRecordTimestamp);
     }).catch(error => {
         console.error("Error loading attendance data:", error);
         loadingDiv.style.display = 'none';
@@ -812,6 +862,12 @@ function init() {
     
     // Load email settings from localStorage
     loadEmailSettings();
+    
+    // Load last known timestamp if available
+    const storedTimestamp = localStorage.getItem('last_known_timestamp');
+    if (storedTimestamp) {
+        lastKnownRecordTimestamp = Number(storedTimestamp);
+    }
     
     // Make these functions accessible globally
     window.showSection = showSection;
